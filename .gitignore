@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# credentials.json（Googleの認証情報）は絶対にGitHubに上げてはいけない
+credentials.json
