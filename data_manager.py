@@ -42,7 +42,7 @@ def update_workout_data(row_index, data_list):
         # A列から順に、data_list の長さ分だけその行を上書きする
         end_col = gspread.utils.rowcol_to_a1(1, len(data_list)).rstrip("1")
         range_name = f"A{row_index}:{end_col}{row_index}"
-        worksheet.update(range_name, [data_list])
+        worksheet.update(range_name=range_name, values=[data_list])
         return True
     except Exception as e:
         st.error(f"更新エラー: {e}")
