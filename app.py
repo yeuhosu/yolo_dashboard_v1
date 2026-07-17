@@ -99,16 +99,39 @@ def get_latest_record_map(dataframe: pd.DataFrame) -> dict:
 
 # --- タブ1: 記録入力 ---
 with tab1:
-    if "Exercise" in df.columns and not df.empty:
-        existing_exercises = sorted({str(e).strip() for e in df["Exercise"].dropna() if str(e).strip()})
+    st.session_state.setdefault("parts_input", [])
+
+    # --- ① まず部位を選択（フォームの外＝選ぶと即座に種目候補が絞り込まれる）---
+    parts = st.multiselect(
+        "部位",
+        PART_OPTIONS,
+        key="parts_input",
+        help="部位を選ぶと、その部位で過去に記録した種目だけが種目リストに表示されます。",
+    )
+
+    # --- ② 選んだ部位でExerciseを絞り込み ---
+    def _row_matches_parts(row_part_str, selected_parts):
+        row_parts = {p.strip() for p in str(row_part_str).split(",") if p.strip()}
+        return bool(row_parts & set(selected_parts))
+
+    if parts and "Part" in df.columns and not df.empty:
+        filtered_df = df[df["Part"].apply(lambda x: _row_matches_parts(x, parts))]
+    else:
+        filtered_df = df  # 部位未選択の場合は全種目を表示
+
+    if "Exercise" in filtered_df.columns and not filtered_df.empty:
+        existing_exercises = sorted(
+            {str(e).strip() for e in filtered_df["Exercise"].dropna() if str(e).strip()}
+        )
     else:
         existing_exercises = []
 
     exercise_options = [NEW_EXERCISE_LABEL] + existing_exercises
     latest_record_map = get_latest_record_map(df)
 
-    if "exercise_choice" not in st.session_state:
-        st.session_state["exercise_choice"] = exercise_options[0] if exercise_options else NEW_EXERCISE_LABEL
+    # 部位変更などで、今選択中の種目が候補から消えていたら先頭にリセット
+    if st.session_state.get("exercise_choice") not in exercise_options:
+        st.session_state["exercise_choice"] = exercise_options[0]
 
     exercise_choice = st.selectbox("種目名", exercise_options, key="exercise_choice")
 
@@ -136,7 +159,6 @@ with tab1:
     st.session_state.setdefault("new_exercise_input", "")
     st.session_state.setdefault("weight_input", 0.0)
     st.session_state.setdefault("reps_input", 0)
-    st.session_state.setdefault("parts_input", [])
     st.session_state.setdefault("note_input", "")
 
     st.caption("※ 以前に記録した種目を選ぶと、重量・回数が自動で入ります")
@@ -165,12 +187,6 @@ with tab1:
                 step=1,
                 key="reps_input",
             )
-
-        parts = st.multiselect(
-            "部位",
-            PART_OPTIONS,
-            key="parts_input",
-        )
         note = st.text_input("メモ", key="note_input")
 
 
