@@ -100,7 +100,6 @@ def get_latest_record_map(dataframe: pd.DataFrame) -> dict:
     return latest_map
 
 with tab1:
-with tab1:
     st.session_state.setdefault("parts_input", None)
 
     # --- ① まず部位を選択（フォームの外＝選ぶと即座に種目候補が絞り込まれる）---
