@@ -31,10 +31,79 @@ st.markdown(
         font-size: 0.8rem !important;
         min-height: 2.2rem !important;
     }
+
+    /* KPIサマリーもモバイルで横並びを維持 */
+    .st-key-kpi_summary div[data-testid="stHorizontalBlock"] {
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
+    }
+    .st-key-kpi_summary div[data-testid="stColumn"],
+    .st-key-kpi_summary div[data-testid="column"] {
+        min-width: 0 !important;
+        width: auto !important;
+        flex: 1 1 0 !important;
+    }
+    .st-key-kpi_summary [data-testid="stMetric"] {
+        padding: 8px 4px !important;
+    }
+    .st-key-kpi_summary [data-testid="stMetricLabel"] {
+        font-size: 0.75rem !important;
+        white-space: normal !important;
+    }
+    .st-key-kpi_summary [data-testid="stMetricValue"] {
+        font-size: 1.3rem !important;
+    }
+     /* 直近の記録カード */
+    .record-card {
+        background-color: #F5F5F7;
+        border-radius: 14px;
+        padding: 14px 16px 10px 16px;
+        margin-bottom: 10px;
+        border-left: 4px solid #FF4B4B;
+    }
+    .record-card.cardio {
+        border-left-color: #4B9BFF;
+    }
+    .record-card .record-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+    }
+    .record-card .exercise-name {
+        font-weight: 700;
+        font-size: 1.05rem;
+        color: #1A1A1A;
+    }
+    .record-card .badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        color: white;
+        background-color: #FF4B4B;
+        white-space: nowrap;
+    }
+    .record-card .badge.cardio {
+        background-color: #4B9BFF;
+    }
+    .record-card .record-meta {
+        color: #555;
+        font-size: 0.88rem;
+        margin-bottom: 2px;
+    }
+    .record-card .record-note {
+        color: #888;
+        font-size: 0.8rem;
+        margin-top: 4px;
+        font-style: italic;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
 st.title("💪 筋トレ記録")
 
 # データ取得
@@ -98,9 +167,60 @@ def get_latest_record_map(dataframe: pd.DataFrame) -> dict:
         if exercise not in latest_map:
             latest_map[exercise] = row
     return latest_map
+def calculate_streak(event_dates: set) -> int:
+    """今日または昨日を起点に、連続して記録がある日数を数える"""
+    if not event_dates:
+        return 0
+
+    today = _dt.date.today()
+    if today in event_dates:
+        cursor = today
+    elif (today - _dt.timedelta(days=1)) in event_dates:
+        # 今日はまだ記録していなくても、昨日までの連続は維持する
+        cursor = today - _dt.timedelta(days=1)
+    else:
+        return 0
+
+    streak = 0
+    while cursor in event_dates:
+        streak += 1
+        cursor -= _dt.timedelta(days=1)
+    return streak
 
 with tab1:
-    st.session_state.setdefault("parts_input", None)
+        # --- KPIサマリー ---
+    if not df.empty and "Date" in df.columns:
+        try:
+            date_series = pd.to_datetime(df["Date"]).dt.date
+        except Exception:
+            date_series = pd.Series([], dtype="object")
+
+        event_date_set = set(date_series.unique())
+        week_start = _dt.date.today() - _dt.timedelta(days=6)
+        week_days_trained = len({d for d in event_date_set if d >= week_start})
+
+        today = _dt.date.today()
+        month_days_trained = len({
+            d for d in event_date_set
+            if d.year == today.year and d.month == today.month
+        })
+
+        streak = calculate_streak(event_date_set)
+    else:
+        week_days_trained = 0
+        month_days_trained = 0
+        streak = 0
+
+    with st.container(key="kpi_summary"):
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("今週の日数", f"{week_days_trained}日")
+        with col_b:
+            st.metric("今月の日数", f"{month_days_trained}日")
+        with col_c:
+            st.metric("連続記録", f"{streak}日", help="今日または昨日までの連続トレーニング日数")
+
+    st.divider()
 
     # --- ① まず部位を選択（フォームの外＝選ぶと即座に種目候補が絞り込まれる）---
     part_selected = st.selectbox(
@@ -327,46 +447,6 @@ with tab1:
         else:
             recent_df = recent_df.sort_values("Date", ascending=False, kind="mergesort")
         recent_df = recent_df.head(8)
-
-        for _, row in recent_df.iterrows():
-            row_index = row.get("RowIndex")
-            row_is_cardio = str(row.get("Part", "")).strip() == CARDIO_PART
-            with st.container():
-                cols = st.columns([2.2, 1.0, 0.8, 0.8, 1.0])
-                with cols[0]:
-                    st.write(f"{row.get('Date', '')} · {row.get('Exercise', '')}")
-                if row_is_cardio:
-                    with cols[1]:
-                        st.caption(f"時間: {row.get('Duration', '')}分")
-                    with cols[2]:
-                        st.caption(f"カロリー: {row.get('Calories', '')}kcal")
-                    with cols[3]:
-                        st.caption(f"部位: {row.get('Part', '')}")
-                else:
-                    with cols[1]:
-                        st.caption(f"重量: {row.get('Weight', '')}kg")
-                    with cols[2]:
-                        st.caption(f"回数: {row.get('Reps', '')}")
-                    with cols[3]:
-                        st.caption(f"部位: {row.get('Part', '')}")
-                with cols[4]:
-                    st.button(
-                        "編集",
-                        key=f"edit-{row_index}",
-                        use_container_width=True,
-                        on_click=start_edit,
-                        args=(row_index, row),
-                    )
-                    st.button(
-                        "削除",
-                        key=f"delete-{row_index}",
-                        use_container_width=True,
-                        on_click=start_delete,
-                        args=(row_index,),
-                    )
-
-                st.caption(f"メモ: {row.get('Note', '')}")
-                st.divider()
 
         if "_delete_ok" in st.session_state:
             if st.session_state.pop("_delete_ok"):
