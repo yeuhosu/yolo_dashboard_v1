@@ -200,14 +200,23 @@ with tab1:
                         )
                     else:
                         ok = add_workout_data([str(date_val), exercise, weight, reps, part_str, note])
-
+                                        
                 if ok:
                     st.toast("記録しました。" if not editing_mode else "更新しました。")
-                    clear_form_state()
+
+                    # 編集モードだけ解除し、入力内容（日付・種目・重量・回数・部位・メモ）はそのまま残す
+                    st.session_state["editing_mode"] = False
+                    st.session_state["edit_row_index"] = None
+
+                    # 新規種目を保存した場合は、ドロップダウンをその種目に切り替えておく
+                    if exercise_choice == NEW_EXERCISE_LABEL:
+                        st.session_state["exercise_choice"] = exercise
+                        st.session_state["new_exercise_input"] = ""
+                        st.session_state["autofill_target"] = exercise
+
                     st.rerun()
                 else:
                     st.error("保存に失敗しました。")
-
     st.divider()
     st.subheader("直近の記録")
 
