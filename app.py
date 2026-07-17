@@ -99,7 +99,6 @@ def get_latest_record_map(dataframe: pd.DataFrame) -> dict:
             latest_map[exercise] = row
     return latest_map
 
-
 with tab1:
 with tab1:
     st.session_state.setdefault("parts_input", None)
