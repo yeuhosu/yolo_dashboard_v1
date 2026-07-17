@@ -448,6 +448,55 @@ with tab1:
             recent_df = recent_df.sort_values("Date", ascending=False, kind="mergesort")
         recent_df = recent_df.head(8)
 
+        for _, row in recent_df.iterrows():
+            row_index = row.get("RowIndex")
+            row_is_cardio = str(row.get("Part", "")).strip() == CARDIO_PART
+            card_class = "record-card cardio" if row_is_cardio else "record-card"
+            badge_class = "badge cardio" if row_is_cardio else "badge"
+
+            if row_is_cardio:
+                meta = f"⏱ {row.get('Duration', '')}分　🔥 {row.get('Calories', '')}kcal"
+            else:
+                meta = f"🏋 {row.get('Weight', '')}kg × {row.get('Reps', '')}回"
+
+            note_html = (
+                f'<div class="record-note">📝 {row.get("Note", "")}</div>'
+                if str(row.get("Note", "")).strip()
+                else ""
+            )
+
+            st.markdown(
+                f"""
+                <div class="{card_class}">
+                    <div class="record-top">
+                        <span class="exercise-name">{row.get('Exercise', '')}</span>
+                        <span class="{badge_class}">{row.get('Part', '')}</span>
+                    </div>
+                    <div class="record-meta">{row.get('Date', '')}　・　{meta}</div>
+                    {note_html}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            col_edit, col_delete = st.columns(2)
+            with col_edit:
+                st.button(
+                    "編集",
+                    key=f"edit-{row_index}",
+                    use_container_width=True,
+                    on_click=start_edit,
+                    args=(row_index, row),
+                )
+            with col_delete:
+                st.button(
+                    "削除",
+                    key=f"delete-{row_index}",
+                    use_container_width=True,
+                    on_click=start_delete,
+                    args=(row_index,),
+                )
+
         if "_delete_ok" in st.session_state:
             if st.session_state.pop("_delete_ok"):
                 st.toast("削除しました。")
