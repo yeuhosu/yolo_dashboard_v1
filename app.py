@@ -101,6 +101,7 @@ def get_latest_record_map(dataframe: pd.DataFrame) -> dict:
 
 
 with tab1:
+with tab1:
     st.session_state.setdefault("parts_input", None)
 
     # --- ① まず部位を選択（フォームの外＝選ぶと即座に種目候補が絞り込まれる）---
@@ -113,6 +114,7 @@ with tab1:
         help="部位を選ぶと、その部位で過去に記録した種目だけが種目リストに表示されます。",
     )
     is_cardio = part_selected == CARDIO_PART
+
     # --- ② 選んだ部位でExerciseを絞り込み ---
     def _row_matches_part(row_part_str, selected_part):
         row_parts = {p.strip() for p in str(row_part_str).split(",") if p.strip()}
@@ -122,7 +124,7 @@ with tab1:
         filtered_df = df[df["Part"].apply(lambda x: _row_matches_part(x, part_selected))]
     else:
         filtered_df = df  # 部位未選択の場合は全種目を表示
-        
+
     if "Exercise" in filtered_df.columns and not filtered_df.empty:
         existing_exercises = sorted(
             {str(e).strip() for e in filtered_df["Exercise"].dropna() if str(e).strip()}
@@ -136,7 +138,7 @@ with tab1:
     if st.session_state.get("exercise_choice") not in exercise_options:
         st.session_state["exercise_choice"] = exercise_options[0]
 
-    # --- ③ 種目→重量・回数・部位を自動入力するコールバック ---
+    # --- ③ 種目→重量・回数・時間・カロリー・部位を自動入力するコールバック ---
     def _apply_exercise_autofill():
         exercise_name = st.session_state.get("exercise_choice")
         if not exercise_name or exercise_name == NEW_EXERCISE_LABEL:
@@ -175,14 +177,14 @@ with tab1:
         if part_list and part_list[0] in PART_OPTIONS:
             st.session_state["parts_input"] = part_list[0]
         st.session_state["autofill_target"] = exercise_name
-        
+
     exercise_choice = st.selectbox(
         "種目名",
         exercise_options,
         key="exercise_choice",
         on_change=_apply_exercise_autofill,
     )
-    
+
     # --- ここで、キー付きウィジェットのデフォルト値を「まだ無い場合だけ」設定 ---
     st.session_state.setdefault("date_input", date.today())
     st.session_state.setdefault("new_exercise_input", "")
@@ -192,7 +194,7 @@ with tab1:
     st.session_state.setdefault("calories_input", 0.0)
     st.session_state.setdefault("note_input", "")
 
-    st.caption("※ 以前に記録した種目を選ぶと、重量・回数が自動で入ります")
+    st.caption("※ 以前に記録した種目を選ぶと、内容が自動で入ります")
 
     with st.form("training_form", clear_on_submit=False):
         col1, col2 = st.columns(2)
@@ -278,30 +280,20 @@ with tab1:
 
                 if ok:
                     st.toast("記録しました。" if not editing_mode else "更新しました。")
+
+                    # 編集モードだけ解除し、入力内容はそのまま残す
                     st.session_state["editing_mode"] = False
                     st.session_state["edit_row_index"] = None
+
+                    # 新規種目を保存した場合は、ドロップダウンをその種目に切り替えておく
                     if exercise_choice == NEW_EXERCISE_LABEL:
                         st.session_state["exercise_choice"] = exercise
                         st.session_state["new_exercise_input"] = ""
                         st.session_state["autofill_target"] = exercise
+
                     st.rerun()
                 else:
                     st.error("保存に失敗しました。")
-        if submitted:
-            if exercise_choice == NEW_EXERCISE_LABEL:
-                exercise = new_exercise.strip()
-            else:
-                exercise = exercise_choice
-
-            if not part_selected:
-                st.error("「部位」を選択してください。")
-            elif not exercise:
-                st.error("「種目名」を入力（または選択）してください。")
-            elif weight <= 0 and reps <= 0:
-                st.error("「重量」と「回数」の両方を入力してください。")
-            else:
-                part_str = part_selected
-                row_index = st.session_state.get("edit_row_index")
 
     st.divider()
     st.subheader("直近の記録")
