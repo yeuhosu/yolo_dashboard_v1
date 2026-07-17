@@ -188,6 +188,8 @@ def calculate_streak(event_dates: set) -> int:
     return streak
 
 with tab1:
+    for _key, _val in st.session_state.pop("_pending_state_update", {}).items():
+        st.session_state[_key] = _val
         # --- KPIサマリー ---
     if not df.empty and "Date" in df.columns:
         try:
@@ -396,18 +398,19 @@ with tab1:
                     else:
                         ok = add_workout_data(data_row)
 
+                # 保存結果の通知と状態リセット
                 if ok:
                     st.toast("記録しました。" if not editing_mode else "更新しました。")
 
-                    # 編集モードだけ解除し、入力内容はそのまま残す
                     st.session_state["editing_mode"] = False
                     st.session_state["edit_row_index"] = None
 
-                    # 新規種目を保存した場合は、ドロップダウンをその種目に切り替えておく
                     if exercise_choice == NEW_EXERCISE_LABEL:
-                        st.session_state["exercise_choice"] = exercise
-                        st.session_state["new_exercise_input"] = ""
-                        st.session_state["autofill_target"] = exercise
+                        st.session_state["_pending_state_update"] = {
+                            "exercise_choice": exercise,
+                            "new_exercise_input": "",
+                            "autofill_target": exercise,
+                        }
 
                     st.rerun()
                 else:
