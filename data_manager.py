@@ -7,6 +7,28 @@ def get_gc():
     return gspread.service_account_from_dict(st.secrets["gcp"])
 
 
+def normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty and len(df.columns) == 0:
+        return df
+
+    normalized_df = df.copy()
+    normalized_df.columns = [col.strip() if isinstance(col, str) else col for col in normalized_df.columns]
+
+    # 2. Calories列の空文字や不正な値を数値に変換し、失敗したものは NaN（または0）にする
+    if "Calories" in normalized_df.columns:
+        normalized_df["Calories"] = pd.to_numeric(
+            normalized_df["Calories"].astype(str).str.strip(), errors="coerce"
+        ).fillna(0)  # 欠損値を0にする場合
+    # Duration列など、他の数値列で同じエラーが起きる可能性がある場合は一緒に処理すると安全です
+    if "Duration" in normalized_df.columns:
+        normalized_df["Duration"] = pd.to_numeric(
+            normalized_df["Duration"].astype(str).str.strip(),
+            errors="coerce",
+        )
+
+    return normalized_df
+
+
 def get_sheet_data():
     try:
         gc = get_gc()
@@ -14,6 +36,7 @@ def get_sheet_data():
         worksheet = sh.worksheet("raw_data")
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
+        df = normalize_dataframe_columns(df)
         if not df.empty:
             df["RowIndex"] = list(range(2, len(df) + 2))
         return df
