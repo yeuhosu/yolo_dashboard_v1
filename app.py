@@ -254,9 +254,12 @@ with tab1:
 
     exercise_options = [NEW_EXERCISE_LABEL] + existing_exercises
 
-    # 部位変更などで、今選択中の種目が候補から消えていたら先頭にリセット
-    if st.session_state.get("exercise_choice") not in exercise_options:
-        st.session_state["exercise_choice"] = exercise_options[0]
+    # 以前に選択していた種目を優先して表示し、無い場合だけ初期値にフォールバックする
+    current_exercise_choice = st.session_state.get("exercise_choice")
+    if current_exercise_choice in exercise_options:
+        exercise_index = exercise_options.index(current_exercise_choice)
+    else:
+        exercise_index = 0 if exercise_options else None
 
     # --- ③ 種目→重量・回数・時間・カロリー・部位を自動入力するコールバック ---
     def _apply_exercise_autofill():
@@ -301,6 +304,7 @@ with tab1:
     exercise_choice = st.selectbox(
         "種目名",
         exercise_options,
+        index=exercise_index,
         key="exercise_choice",
         on_change=_apply_exercise_autofill,
     )
