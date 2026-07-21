@@ -342,7 +342,7 @@ with tab1:
                 weight = st.number_input(
                     "重量 (kg)",
                     min_value=0.0,
-                    step=0.01,
+                    step=0.25,
                     key="weight_input",
                 )
                 reps = st.number_input(
