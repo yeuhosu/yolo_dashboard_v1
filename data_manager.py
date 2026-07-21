@@ -7,6 +7,15 @@ def get_gc():
     return gspread.service_account_from_dict(st.secrets["gcp"])
 
 
+def normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty and len(df.columns) == 0:
+        return df
+
+    normalized_df = df.copy()
+    normalized_df.columns = [col.strip() if isinstance(col, str) else col for col in normalized_df.columns]
+    return normalized_df
+
+
 def get_sheet_data():
     try:
         gc = get_gc()
@@ -14,6 +23,7 @@ def get_sheet_data():
         worksheet = sh.worksheet("raw_data")
         data = worksheet.get_all_records()
         df = pd.DataFrame(data)
+        df = normalize_dataframe_columns(df)
         if not df.empty:
             df["RowIndex"] = list(range(2, len(df) + 2))
         return df
