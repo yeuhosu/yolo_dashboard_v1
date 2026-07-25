@@ -45,7 +45,7 @@ st.set_page_config(page_title="Training Logger", layout="centered")
 # ページ全体のCSSを適用
 inject_global_css()
 
-st.title("💪 筋トレ記録")
+st.title("My-Fitness-Log")
 
 # データ取得
 df = get_sheet_data()
