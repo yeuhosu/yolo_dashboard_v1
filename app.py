@@ -13,93 +13,37 @@ from data_manager import (
 
 from mod.calendar_colors import parse_parts, get_day_color, get_part_color, PART_COLOR_MAP
 
-st.set_page_config(page_title="Training Logger", layout="centered")
-st.markdown(
-    """
-    <style>
-    /* カレンダーの日付グリッドだけ横並びを維持・コンパクト化 */
-    .st-key-calendar_grid div[data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-        gap: 4px !important;
-    }
-    .st-key-calendar_grid div[data-testid="stColumn"],
-    .st-key-calendar_grid div[data-testid="column"] {
-        min-width: 0 !important;
-        width: auto !important;
-        flex: 1 1 0 !important;
-        padding: 0 2px !important;
-    }
-    .st-key-calendar_grid button {
-        padding: 0.25rem 0.1rem !important;
-        font-size: 0.8rem !important;
-        min-height: 2.2rem !important;
-    }
+import pathlib
 
-    /* KPIサマリーもモバイルで横並びを維持 */
-    .st-key-kpi_summary div[data-testid="stHorizontalBlock"] {
-        flex-wrap: nowrap !important;
-        gap: 6px !important;
-    }
-    .st-key-kpi_summary div[data-testid="stColumn"],
-    .st-key-kpi_summary div[data-testid="column"] {
-        min-width: 0 !important;
-        width: auto !important;
-        flex: 1 1 0 !important;
-    }
-    .st-key-kpi_summary [data-testid="stMetric"] {
-        padding: 8px 4px !important;
-    }
-    .st-key-kpi_summary [data-testid="stMetricLabel"] {
-        font-size: 0.75rem !important;
-        white-space: normal !important;
-    }
-    .st-key-kpi_summary [data-testid="stMetricValue"] {
-        font-size: 1.3rem !important;
-    }
-     /* 直近の記録カード */
-    .record-card {
-        background-color: #F5F5F7;
-        border-radius: 14px;
-        padding: 14px 16px 10px 16px;
-        margin-bottom: 10px;
-        border-left: 4px solid #FF4B4B;
-    }
-    .record-card .record-top {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 4px;
-    }
-    .record-card .exercise-name {
-        font-weight: 700;
-        font-size: 1.05rem;
-        color: #1A1A1A;
-    }
-    .record-card .badge {
-        display: inline-block;
-        padding: 2px 10px;
-        border-radius: 999px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        color: white;
-        background-color: #FF4B4B;
-        white-space: nowrap;
-    }
-    .record-card .record-meta {
-        color: #555;
-        font-size: 0.88rem;
-        margin-bottom: 2px;
-    }
-    .record-card .record-note {
-        color: #888;
-        font-size: 0.8rem;
-        margin-top: 4px;
-        font-style: italic;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+
+# --- CSS / styling helpers ---
+def inject_global_css():
+    css_path = pathlib.Path(__file__).resolve().parent / "static" / "styles.css"
+    css = css_path.read_text(encoding="utf-8")
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
+
+def inject_day_button_css(button_key: str, color: str):
+    st.markdown(
+        f"""
+        <style>
+        .st-key-{button_key} button {{
+            background-color: {color} !important;
+            color: white !important;
+            font-weight: 600;
+            border-radius: 10px;
+            padding: 8px 6px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+st.set_page_config(page_title="Training Logger", layout="centered")
+
+# ページ全体のCSSを適用
+inject_global_css()
 
 st.title("💪 筋トレ記録")
 
@@ -169,6 +113,57 @@ def get_latest_record_map(dataframe: pd.DataFrame) -> dict:
         if exercise not in latest_map:
             latest_map[exercise] = row
     return latest_map
+
+def get_best_record_map(dataframe: pd.DataFrame) -> dict:
+    """種目ごとに『直近にその種目を行った日』の中で、重量×回数が最大の記録を返す"""
+    if "Exercise" not in dataframe.columns or dataframe.empty:
+        return {}
+
+    records = dataframe.copy()
+    records = records.dropna(subset=["Exercise"])
+    records["Exercise"] = records["Exercise"].astype(str).str.strip()
+    records = records[records["Exercise"] != ""]
+
+    if records.empty:
+        return {}
+
+    def _to_float(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    records["_score"] = records.apply(
+        lambda r: _to_float(r.get("Weight", 0)) * _to_float(r.get("Reps", 0)), axis=1
+    )
+
+    # 日付を比較可能な形式にしておく（文字列日付でも安全に最新判定するため）
+    try:
+        records["_date_sort"] = pd.to_datetime(records["Date"])
+    except Exception:
+        records["_date_sort"] = records["Date"]
+
+    best_map = {}
+    for exercise, group in records.groupby("Exercise"):
+        # ① その種目を最後に行った日付を特定
+        latest_date = group["_date_sort"].max()
+        # ② その日付の記録だけに絞り込む
+        latest_day_group = group[group["_date_sort"] == latest_date]
+
+        # ③ 同じ日に複数セットある場合は、RowIndexがあればそれで、無ければ元の順序で並べて
+        #    スコア（重量×回数）が最大の行を選ぶ
+        if "RowIndex" in latest_day_group.columns:
+            latest_day_group = latest_day_group.sort_values(
+                ["_score", "RowIndex"], ascending=[False, False], kind="mergesort"
+            )
+        else:
+            latest_day_group = latest_day_group.sort_values(
+                ["_score"], ascending=[False], kind="mergesort"
+            )
+
+        best_map[exercise] = latest_day_group.iloc[0]
+    return best_map
+
 def calculate_streak(event_dates: set) -> int:
     """今日または昨日を起点に、連続して記録がある日数を数える"""
     if not event_dates:
@@ -275,25 +270,34 @@ with tab1:
             return
 
         latest_record = latest_record_map[exercise_name]
+        row_is_cardio = str(latest_record.get("Part", "")).strip() == CARDIO_PART
+
+        if row_is_cardio:
+            # 有酸素は「重量×回数」の指標が使えないため、直近の記録を使う
+            target_record = latest_record
+        else:
+            best_record_map = get_best_record_map(df)
+            target_record = best_record_map.get(exercise_name, latest_record)
+
         try:
-            weight_default = float(latest_record.get("Weight", 0) or 0)
+            weight_default = float(target_record.get("Weight", 0) or 0)
         except (TypeError, ValueError):
             weight_default = 0.0
         try:
-            reps_default = int(latest_record.get("Reps", 0) or 0)
+            reps_default = int(target_record.get("Reps", 0) or 0)
         except (TypeError, ValueError):
             reps_default = 0
         try:
-            duration_default = float(latest_record.get("Duration", 0) or 0)
+            duration_default = float(target_record.get("Duration", 0) or 0)
         except (TypeError, ValueError):
             duration_default = 0.0
         try:
-            calories_default = float(latest_record.get("Calories", 0) or 0)
+            calories_default = float(target_record.get("Calories", 0) or 0)
         except (TypeError, ValueError):
             calories_default = 0.0
 
         part_list = [
-            p.strip() for p in str(latest_record.get("Part", "")).split(",") if p.strip()
+            p.strip() for p in str(target_record.get("Part", "")).split(",") if p.strip()
         ]
 
         st.session_state["weight_input"] = weight_default
@@ -303,7 +307,7 @@ with tab1:
         if part_list and part_list[0] in PART_OPTIONS:
             st.session_state["parts_input"] = part_list[0]
         st.session_state["autofill_target"] = exercise_name
-
+        
     exercise_choice = st.selectbox(
         "種目名",
         exercise_options,
@@ -581,21 +585,7 @@ with tab2:
                 button_key = f"day-{date_str}"
 
                 with col:
-                    # このボタンだけに色を適用するCSS
-                    st.markdown(
-                        f"""
-                        <style>
-                        .st-key-{button_key} button {{
-                            background-color: {day_color} !important;
-                            color: white !important;
-                            font-weight: 600;
-                            border-radius: 10px;
-                            padding: 8px 6px;
-                        }}
-                        </style>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    inject_day_button_css(button_key, day_color)
                     clicked = st.button(str(d), key=button_key, use_container_width=True)
 
                 if clicked:
