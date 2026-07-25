@@ -1,3 +1,4 @@
+# ライブラリのインポート
 import streamlit as st
 import pandas as pd
 import datetime as _dt
@@ -9,6 +10,8 @@ from data_manager import (
     update_workout_data,
     delete_workout_data,
 )
+
+from mod.calendar_colors import parse_parts, get_day_color, get_part_color, PART_COLOR_MAP
 
 st.set_page_config(page_title="Training Logger", layout="centered")
 st.markdown(
@@ -61,9 +64,6 @@ st.markdown(
         margin-bottom: 10px;
         border-left: 4px solid #FF4B4B;
     }
-    .record-card.cardio {
-        border-left-color: #4B9BFF;
-    }
     .record-card .record-top {
         display: flex;
         justify-content: space-between;
@@ -84,9 +84,6 @@ st.markdown(
         color: white;
         background-color: #FF4B4B;
         white-space: nowrap;
-    }
-    .record-card .badge.cardio {
-        background-color: #4B9BFF;
     }
     .record-card .record-meta {
         color: #555;
@@ -116,6 +113,11 @@ PART_OPTIONS = ["胸", "背中", "脚", "肩", "上腕2頭", "上腕3頭", "腹�
 CARDIO_PART = "有酸素"
 NEW_EXERCISE_LABEL = "＋ 新しい種目を追加"
 
+def _get_part_color(part_str):
+    parts = parse_parts(part_str)
+    if not parts:
+        return "#D1D5DB"
+    return get_part_color(parts[0])
 
 def clear_form_state():
     for key in [
@@ -187,6 +189,7 @@ def calculate_streak(event_dates: set) -> int:
         cursor -= _dt.timedelta(days=1)
     return streak
 
+# 筋トレ記録入力タブ
 with tab1:
     for _key, _val in st.session_state.pop("_pending_state_update", {}).items():
         st.session_state[_key] = _val
@@ -455,53 +458,51 @@ with tab1:
             recent_df = recent_df.sort_values("Date", ascending=False, kind="mergesort")
         recent_df = recent_df.head(8)
         for _, row in recent_df.iterrows():
-                row_index = row.get("RowIndex")
-                row_is_cardio = str(row.get("Part", "")).strip() == CARDIO_PART
-                card_class = "record-card cardio" if row_is_cardio else "record-card"
-                badge_class = "badge cardio" if row_is_cardio else "badge"
+            row_index = row.get("RowIndex")
+            row_color = _get_part_color(row.get("Part", ""))
 
-                if row_is_cardio:
-                    meta = f"⏱ {row.get('Duration', '')}分　🔥 {row.get('Calories', '')}kcal"
-                else:
-                    meta = f"🏋 {row.get('Weight', '')}kg × {row.get('Reps', '')}回"
+            if str(row.get("Part", "")).strip() == CARDIO_PART:
+                meta = f"⏱ {row.get('Duration', '')}分　🔥 {row.get('Calories', '')}kcal"
+            else:
+                meta = f"🏋 {row.get('Weight', '')}kg × {row.get('Reps', '')}回"
 
-                note_html = (
-                    f'<div class="record-note">📝 {row.get("Note", "")}</div>'
-                    if str(row.get("Note", "")).strip()
-                    else ""
-                )
+            note_html = (
+                f'<div class="record-note">📝 {row.get("Note", "")}</div>'
+                if str(row.get("Note", "")).strip()
+                else ""
+            )
 
-                st.markdown(
-                    f"""
-                    <div class="{card_class}">
-                        <div class="record-top">
-                            <span class="exercise-name">{row.get('Exercise', '')}</span>
-                            <span class="{badge_class}">{row.get('Part', '')}</span>
-                        </div>
-                        <div class="record-meta">{row.get('Date', '')}　・　{meta}</div>
-                        {note_html}
+            st.markdown(
+                f"""
+                <div class="record-card" style="border-left-color:{row_color};">
+                    <div class="record-top">
+                        <span class="exercise-name">{row.get('Exercise', '')}</span>
+                        <span class="badge" style="background-color:{row_color};">{row.get('Part', '')}</span>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                    <div class="record-meta">{row.get('Date', '')}　・　{meta}</div>
+                    {note_html}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-                col_edit, col_delete = st.columns(2)
-                with col_edit:
-                    st.button(
-                        "編集",
-                        key=f"edit-{row_index}",
-                        use_container_width=True,
-                        on_click=start_edit,
-                        args=(row_index, row),
-                    )
-                with col_delete:
-                    st.button(
-                        "削除",
-                        key=f"delete-{row_index}",
-                        use_container_width=True,
-                        on_click=start_delete,
-                        args=(row_index,),
-                    )
+            col_edit, col_delete = st.columns(2)
+            with col_edit:
+                st.button(
+                    "編集",
+                    key=f"edit-{row_index}",
+                    use_container_width=True,
+                    on_click=start_edit,
+                    args=(row_index, row),
+                )
+            with col_delete:
+                st.button(
+                    "削除",
+                    key=f"delete-{row_index}",
+                    use_container_width=True,
+                    on_click=start_delete,
+                    args=(row_index,),
+                )
 
     else:
         st.info("まだ記録がありません。")
@@ -511,7 +512,15 @@ with tab2:
     import calendar as _cal
 
     event_dates = set()
+    day_parts_map = {}
     if "Date" in df.columns and not df.empty:
+        # カレンダー描画前にその日の部位を集計して色を決める
+        for _, row in df.iterrows():
+            date_str = str(row.get("Date", "")).strip()
+            if not date_str:
+                continue
+            day_parts_map.setdefault(date_str, []).extend(parse_parts(row.get("Part", "")))
+        
         try:
             event_dates = set(pd.to_datetime(df["Date"]).dt.date.astype(str).unique())
         except Exception:
@@ -566,18 +575,45 @@ with tab2:
 
                 date_str = f"{year:04d}-{month:02d}-{d:02d}"
                 has_event = date_str in event_dates
+                day_parts = day_parts_map.get(date_str, [])
+                day_color = get_day_color(day_parts) if has_event else "#F3F4F6"
+
+                button_key = f"day-{date_str}"
 
                 with col:
-                    clicked = st.button(
-                        str(d),
-                        key=f"day-{date_str}",
-                        use_container_width=True,
-                        type="primary" if has_event else "secondary",
+                    # このボタンだけに色を適用するCSS
+                    st.markdown(
+                        f"""
+                        <style>
+                        .st-key-{button_key} button {{
+                            background-color: {day_color} !important;
+                            color: white !important;
+                            font-weight: 600;
+                            border-radius: 10px;
+                            padding: 8px 6px;
+                        }}
+                        </style>
+                        """,
+                        unsafe_allow_html=True,
                     )
+                    clicked = st.button(str(d), key=button_key, use_container_width=True)
+
                 if clicked:
                     st.session_state["clicked_date"] = date_str
+                    st.rerun()
 
     st.divider()
+    legend_html = "".join(
+            f"<span style='display:inline-flex; align-items:center; gap:3px; margin:2px 4px 2px 0; font-size:0.72rem; color:#444;'>"
+            f"<span style='width:7px; height:7px; border-radius:999px; background-color:{color}; display:inline-block;'></span>"
+            f"{part}</span>"
+            for part, color in PART_COLOR_MAP.items()
+        )
+
+    st.markdown(
+        f"<div style='display:flex; flex-wrap:wrap; align-items:center; margin:6px 0 4px 0;'>{legend_html}</div>",
+        unsafe_allow_html=True,
+    )
 
     selected_date = st.session_state.get("clicked_date", None)
     if selected_date:
