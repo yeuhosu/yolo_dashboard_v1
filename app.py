@@ -184,8 +184,101 @@ def calculate_streak(event_dates: set) -> int:
         cursor -= _dt.timedelta(days=1)
     return streak
 
+
+# URLのクエリ名 → (session_stateのキー, 型)
+# スマホの画面ロック等で接続が切れても、URLに残した値から入力途中の内容を復元する
+DRAFT_PARAM_MAP = {
+    "part": ("parts_input", str),
+    "ex": ("exercise_choice", str),
+    "w": ("weight_input", float),
+    "r": ("reps_input", int),
+    "dur": ("duration_input", float),
+    "cal": ("calories_input", float),
+}
+
+
+def restore_draft_from_url():
+    """新しいセッションの最初の1回だけ、URLの値を入力欄に戻す"""
+    if st.session_state.get("_draft_restored"):
+        return
+    st.session_state["_draft_restored"] = True
+
+    for param, (key, cast) in DRAFT_PARAM_MAP.items():
+        raw = st.query_params.get(param)
+        if raw is None or key in st.session_state:
+            continue
+        try:
+            value = cast(raw)
+        except (TypeError, ValueError):
+            continue
+        if key == "parts_input" and value not in PART_OPTIONS:
+            continue
+        st.session_state[key] = value
+
+    # 重量等もURLから戻せた場合は、種目の自動入力で上書きしないようにする
+    restored_values = [
+        _to_number(st.query_params.get(p)) for p in ("w", "r", "dur", "cal")
+    ]
+    if "ex" in st.query_params and any(restored_values):
+        st.session_state["autofill_target"] = st.session_state.get("exercise_choice")
+
+
+def sync_draft_to_url():
+    """現在の入力内容をURLに書き戻す（変わった値だけ）"""
+    if st.session_state.get("editing_mode"):
+        return
+
+    for param, (key, cast) in DRAFT_PARAM_MAP.items():
+        value = st.session_state.get(key)
+        if value is None or value == "" or value == NEW_EXERCISE_LABEL:
+            if param in st.query_params:
+                del st.query_params[param]
+            continue
+        text = f"{value:g}" if isinstance(value, float) else str(value)
+        if st.query_params.get(param) != text:
+            st.query_params[param] = text
+
+
+def _to_number(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def format_set(row) -> str:
+    if str(row.get("Part", "")).strip() == CARDIO_PART:
+        return f"{_to_number(row.get('Duration')):g}分 {_to_number(row.get('Calories')):g}kcal"
+    return f"{_to_number(row.get('Weight')):g}kg×{int(_to_number(row.get('Reps')))}回"
+
+
+def get_exercise_history(dataframe: pd.DataFrame, exercise: str):
+    """種目の（前回の日付, 前回のセット一覧, 今日のセット一覧）を返す"""
+    if not exercise or "Exercise" not in dataframe.columns or dataframe.empty:
+        return None, [], []
+
+    records = dataframe[dataframe["Exercise"].astype(str).str.strip() == exercise].copy()
+    records["_date_sort"] = pd.to_datetime(records["Date"], errors="coerce").dt.date
+    records = records.dropna(subset=["_date_sort"])
+    if records.empty:
+        return None, [], []
+
+    sort_cols = ["_date_sort", "RowIndex"] if "RowIndex" in records.columns else ["_date_sort"]
+    records = records.sort_values(sort_cols, kind="mergesort")
+
+    today = date.today()
+    today_rows = [row for _, row in records[records["_date_sort"] == today].iterrows()]
+    past = records[records["_date_sort"] < today]
+    if past.empty:
+        return None, [], today_rows
+
+    last_date = past["_date_sort"].max()
+    last_rows = [row for _, row in past[past["_date_sort"] == last_date].iterrows()]
+    return last_date, last_rows, today_rows
+
 # 筋トレ記録入力タブ
 with tab1:
+    restore_draft_from_url()
     for _key, _val in st.session_state.pop("_pending_state_update", {}).items():
         st.session_state[_key] = _val
         # --- KPIサマリー ---
@@ -257,10 +350,12 @@ with tab1:
     if current_exercise_choice in exercise_options:
         exercise_index = exercise_options.index(current_exercise_choice)
     else:
+        # 候補に無い値が残っているとselectboxがエラーになるため消しておく
+        st.session_state.pop("exercise_choice", None)
         exercise_index = 0 if exercise_options else None
 
     # --- ③ 種目→重量・回数・時間・カロリー・部位を自動入力するコールバック ---
-    def _apply_exercise_autofill():
+    def _apply_exercise_autofill(set_part: bool = True):
         exercise_name = st.session_state.get("exercise_choice")
         if not exercise_name or exercise_name == NEW_EXERCISE_LABEL:
             return
@@ -304,10 +399,10 @@ with tab1:
         st.session_state["reps_input"] = reps_default
         st.session_state["duration_input"] = duration_default
         st.session_state["calories_input"] = calories_default
-        if part_list and part_list[0] in PART_OPTIONS:
+        if set_part and part_list and part_list[0] in PART_OPTIONS:
             st.session_state["parts_input"] = part_list[0]
         st.session_state["autofill_target"] = exercise_name
-        
+
     exercise_choice = st.selectbox(
         "種目名",
         exercise_options,
@@ -315,6 +410,41 @@ with tab1:
         key="exercise_choice",
         on_change=_apply_exercise_autofill,
     )
+
+    # 再接続などで種目だけ残り、自動入力が走っていない場合は補完する
+    # （部位のselectboxは描画済みなので部位は書き換えない）
+    if (
+        exercise_choice
+        and exercise_choice != NEW_EXERCISE_LABEL
+        and st.session_state.get("autofill_target") != exercise_choice
+        and not st.session_state.get("editing_mode")
+    ):
+        _apply_exercise_autofill(set_part=False)
+
+    # --- 選択中の種目の「前回」と「今日」のセット ---
+    if exercise_choice and exercise_choice != NEW_EXERCISE_LABEL:
+        last_date, last_sets, today_sets = get_exercise_history(df, exercise_choice)
+        if last_date:
+            last_line = f"前回 {last_date.month}/{last_date.day}: " + " / ".join(
+                format_set(r) for r in last_sets
+            )
+        else:
+            last_line = "前回: 記録なし"
+        if today_sets:
+            today_line = f"今日: {len(today_sets)}セット済　" + " / ".join(
+                format_set(r) for r in today_sets
+            )
+        else:
+            today_line = "今日: まだ記録なし"
+        st.markdown(
+            f"""
+            <div class="record-card" style="border-left-color:{_get_part_color(part_selected or '')};">
+                <div class="record-meta">{last_line}</div>
+                <div class="record-meta">{today_line}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     # --- ここで、キー付きウィジェットのデフォルト値を「まだ無い場合だけ」設定 ---
     st.session_state.setdefault("date_input", date.today())
@@ -510,6 +640,8 @@ with tab1:
 
     else:
         st.info("まだ記録がありません。")
+
+    sync_draft_to_url()
 
 # --- タブ2: カレンダー ---
 with tab2:
