@@ -1,3 +1,6 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600&display=swap');
+
+
 .st-key-calendar_grid div[data-testid="stHorizontalBlock"] {
     flex-wrap: nowrap !important;
     gap: 4px !important;
@@ -29,17 +32,39 @@
     flex: 1 1 0 !important;
 }
 
+/* KPIカード：ダーク×赤アクセント */
 .st-key-kpi_summary [data-testid="stMetric"] {
-    padding: 8px 4px !important;
+    background: linear-gradient(160deg, #1F1F23 0%, #0E0E10 100%) !important;
+    border: 1px solid #2A2A2E;
+    border-radius: 14px;
+    box-shadow: inset 0 3px 0 #FF4B4B, 0 6px 16px rgba(0, 0, 0, 0.25);
+    padding: 12px 8px !important;
+    text-align: center;
 }
 
 .st-key-kpi_summary [data-testid="stMetricLabel"] {
-    font-size: 0.75rem !important;
+    justify-content: center;
+    width: 100%;
+    font-size: 0.7rem !important;
     white-space: normal !important;
 }
 
+.st-key-kpi_summary [data-testid="stMetricLabel"],
+.st-key-kpi_summary [data-testid="stMetricLabel"] p,
+.st-key-kpi_summary [data-testid="stMetricLabel"] svg {
+    color: #9CA3AF !important;
+    fill: #9CA3AF;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+}
+
 .st-key-kpi_summary [data-testid="stMetricValue"] {
-    font-size: 1.3rem !important;
+    justify-content: center;
+    font-family: 'Oswald', sans-serif !important;
+    font-size: 1.9rem !important;
+    font-weight: 600;
+    color: #FF4B4B !important;
+    text-shadow: 0 0 12px rgba(255, 75, 75, 0.45);
 }
 
 .record-card {
