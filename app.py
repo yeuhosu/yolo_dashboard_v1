@@ -23,10 +23,9 @@ def inject_global_css():
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 
-def inject_day_button_css(button_key: str, color: str):
-    st.markdown(
-        f"""
-        <style>
+def day_button_css(button_key: str, color: str) -> str:
+    # ボタンごとにst.markdownすると要素が増えて重くなるため、ルール文字列だけ返してまとめて注入する
+    return f"""
         .st-key-{button_key} button {{
             background-color: {color} !important;
             color: white !important;
@@ -34,10 +33,7 @@ def inject_day_button_css(button_key: str, color: str):
             border-radius: 10px;
             padding: 8px 6px;
         }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    """
 
 
 st.set_page_config(page_title="Training Logger", layout="centered")
@@ -276,44 +272,16 @@ def get_exercise_history(dataframe: pd.DataFrame, exercise: str):
     last_rows = [row for _, row in past[past["_date_sort"] == last_date].iterrows()]
     return last_date, last_rows, today_rows
 
-# 筋トレ記録入力タブ
-with tab1:
+@st.fragment
+def render_record_section(df: pd.DataFrame):
+    """部位・種目の選択や編集ではこの部分だけ再実行し、カレンダー等は描き直さない"""
+    # 削除した場合はKPIやカレンダーにも反映させるため、アプリ全体を再実行する
+    if st.session_state.pop("_delete_ok", False):
+        st.rerun()
+
     restore_draft_from_url()
     for _key, _val in st.session_state.pop("_pending_state_update", {}).items():
         st.session_state[_key] = _val
-        # --- KPIサマリー ---
-    if not df.empty and "Date" in df.columns:
-        try:
-            date_series = pd.to_datetime(df["Date"]).dt.date
-        except Exception:
-            date_series = pd.Series([], dtype="object")
-
-        event_date_set = set(date_series.unique())
-        week_start = _dt.date.today() - _dt.timedelta(days=6)
-        week_days_trained = len({d for d in event_date_set if d >= week_start})
-
-        today = _dt.date.today()
-        month_days_trained = len({
-            d for d in event_date_set
-            if d.year == today.year and d.month == today.month
-        })
-
-        streak = calculate_streak(event_date_set)
-    else:
-        week_days_trained = 0
-        month_days_trained = 0
-        streak = 0
-
-    with st.container(key="kpi_summary"):
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            st.metric("今週の日数", f"{week_days_trained}日")
-        with col_b:
-            st.metric("今月の日数", f"{month_days_trained}日")
-        with col_c:
-            st.metric("連続記録", f"{streak}日", help="今日または昨日までの連続トレーニング日数")
-
-    st.divider()
 
     # --- ① まず部位を選択（フォームの外＝選ぶと即座に種目候補が絞り込まれる）---
     part_selected = st.selectbox(
@@ -643,6 +611,45 @@ with tab1:
 
     sync_draft_to_url()
 
+
+# 筋トレ記録入力タブ
+with tab1:
+    # --- KPIサマリー ---
+    if not df.empty and "Date" in df.columns:
+        try:
+            date_series = pd.to_datetime(df["Date"]).dt.date
+        except Exception:
+            date_series = pd.Series([], dtype="object")
+
+        event_date_set = set(date_series.unique())
+        week_start = _dt.date.today() - _dt.timedelta(days=6)
+        week_days_trained = len({d for d in event_date_set if d >= week_start})
+
+        today = _dt.date.today()
+        month_days_trained = len({
+            d for d in event_date_set
+            if d.year == today.year and d.month == today.month
+        })
+
+        streak = calculate_streak(event_date_set)
+    else:
+        week_days_trained = 0
+        month_days_trained = 0
+        streak = 0
+
+    with st.container(key="kpi_summary"):
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("今週の日数", f"{week_days_trained}日")
+        with col_b:
+            st.metric("今月の日数", f"{month_days_trained}日")
+        with col_c:
+            st.metric("連続記録", f"{streak}日", help="今日または昨日までの連続トレーニング日数")
+
+    st.divider()
+
+    render_record_section(df)
+
 # --- タブ2: カレンダー ---
 with tab2:
     import calendar as _cal
@@ -693,6 +700,7 @@ with tab2:
             st.rerun()
 
     # ここから下だけ「カレンダーグリッド」として囲む
+    day_css_rules = []
     with st.container(key="calendar_grid"):
         weekday_cols = st.columns(7)
         for wcol, wname in zip(weekday_cols, ["日", "月", "火", "水", "木", "金", "土"]):
@@ -715,14 +723,16 @@ with tab2:
                 day_color = get_day_color(day_parts) if has_event else "#F3F4F6"
 
                 button_key = f"day-{date_str}"
+                day_css_rules.append(day_button_css(button_key, day_color))
 
                 with col:
-                    inject_day_button_css(button_key, day_color)
                     clicked = st.button(str(d), key=button_key, use_container_width=True)
 
                 if clicked:
                     st.session_state["clicked_date"] = date_str
                     st.rerun()
+
+    st.markdown(f"<style>{''.join(day_css_rules)}</style>", unsafe_allow_html=True)
 
     st.divider()
     legend_html = "".join(

@@ -5,3 +5,6 @@ backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F5F5F7"
 textColor = "#1A1A1A"
 font = "sans serif"
+[server]
+# スマホ回線やプロキシでWebSocketが切れにくくなるよう、短めの間隔でpingを送る
+websocketPingInterval = 10
